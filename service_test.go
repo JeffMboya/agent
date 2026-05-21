@@ -47,7 +47,8 @@ func testConfig() agent.Config {
 			Password:   "client-secret",
 			SkipTLSVer: true,
 			Retain:     true,
-			QoS:        1,
+			QoS:        0,
+			CmdQoS:     1,
 		},
 		agent.HeartbeatConfig{Interval: time.Hour},
 		agent.TerminalConfig{SessionTimeout: time.Minute},
@@ -100,11 +101,11 @@ func newService(t *testing.T, cfg agent.Config, devices ...*devicemgr.Manager) (
 	return svc, mqttClient, nodeRed, err
 }
 
-func expectMQTTPublish(t *testing.T, mqttClient *agentmocks.MQTTClient, topic string, err error) *mock.Call {
+func expectMQTTPublish(t *testing.T, mqttClient *agentmocks.MQTTClient, topic string, qos byte, err error) *mock.Call {
 	token := agentmocks.NewMQTTToken(t)
 	token.On("Wait").Return(true).Once()
 	token.On("Error").Return(err).Once()
-	return mqttClient.On("Publish", topic, byte(1), true, mock.Anything).Return(token).Once()
+	return mqttClient.On("Publish", topic, qos, true, mock.Anything).Return(token).Once()
 }
 
 func TestChannelConfig(t *testing.T) {
@@ -274,7 +275,7 @@ func TestExecute(t *testing.T) {
 			require.NoError(t, err)
 			var payload any
 			if tc.topic != "" {
-				expectMQTTPublish(t, mqttClient, tc.topic, tc.pubErr).Run(func(args mock.Arguments) {
+				expectMQTTPublish(t, mqttClient, tc.topic, byte(1), tc.pubErr).Run(func(args mock.Arguments) {
 					payload = args.Get(3)
 				})
 			}
@@ -316,7 +317,7 @@ func TestControl(t *testing.T) {
 			cmd:  "nodered-ping",
 			mockFn: func(t *testing.T, mqttClient *agentmocks.MQTTClient, nodeRed *nrmocks.Client) {
 				nodeRed.On("Ping").Return("pong", nil).Once()
-				expectMQTTPublish(t, mqttClient, mqttTopic("ctrl-channel", "res"), nil)
+				expectMQTTPublish(t, mqttClient, mqttTopic("ctrl-channel", "res"), byte(1), nil)
 			},
 		},
 		{
@@ -333,7 +334,7 @@ func TestControl(t *testing.T) {
 			err:  true,
 			mockFn: func(t *testing.T, mqttClient *agentmocks.MQTTClient, nodeRed *nrmocks.Client) {
 				nodeRed.On("Ping").Return("pong", nil).Once()
-				expectMQTTPublish(t, mqttClient, mqttTopic("ctrl-channel", "res"), errBoom)
+				expectMQTTPublish(t, mqttClient, mqttTopic("ctrl-channel", "res"), byte(1), errBoom)
 			},
 		},
 	}
@@ -427,7 +428,7 @@ func TestServiceConfig(t *testing.T) {
 				require.NoError(t, svc.UpdateLiveness("nodered", "service"))
 			}
 			if !tc.err || tc.pubErr != nil {
-				expectMQTTPublish(t, mqttClient, mqttTopic("ctrl-channel", "res"), tc.pubErr)
+				expectMQTTPublish(t, mqttClient, mqttTopic("ctrl-channel", "res"), byte(1), tc.pubErr)
 			}
 			err = svc.ServiceConfig(context.Background(), "uuid", tc.cmd)
 			if tc.err {
@@ -891,7 +892,7 @@ func TestPublish(t *testing.T) {
 			svc, mqttClient, _, err := newService(t, testConfig())
 			require.NoError(t, err)
 			var payload any
-			expectMQTTPublish(t, mqttClient, tc.output, tc.err).Run(func(args mock.Arguments) {
+			expectMQTTPublish(t, mqttClient, tc.output, byte(0), tc.err).Run(func(args mock.Arguments) {
 				payload = args.Get(3)
 			})
 			err = svc.Publish(tc.topic, "payload")

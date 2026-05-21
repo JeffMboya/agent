@@ -240,7 +240,7 @@ func (a *agent) Execute(uuid, cmd string) (string, error) {
 		return "", errors.Wrap(errFailedEncode, err)
 	}
 
-	if err := a.Publish(control, string(payload)); err != nil {
+	if err := a.publishCmd(control, string(payload)); err != nil {
 		return "", errors.Wrap(errFailedToPublish, err)
 	}
 
@@ -666,7 +666,7 @@ func (a *agent) processResponse(uuid, cmd, resp string) error {
 	if err != nil {
 		return errors.Wrap(errFailedEncode, err)
 	}
-	if err := a.Publish(control, string(payload)); err != nil {
+	if err := a.publishCmd(control, string(payload)); err != nil {
 		return errors.Wrap(errFailedToPublish, err)
 	}
 	return nil
@@ -746,6 +746,17 @@ func (a *agent) Publish(t, payload string) error {
 	return nil
 }
 
+func (a *agent) publishCmd(t, payload string) error {
+	topic := a.getTopic(t)
+	mqtt := a.config.MQTT
+	token := a.mqttClient.Publish(topic, mqtt.CmdQoS, mqtt.Retain, payload)
+	token.Wait()
+	if err := token.Error(); err != nil {
+		return errors.New(err.Error())
+	}
+	return nil
+}
+
 func (a *agent) selfHeartbeat(ctx context.Context, topic string, interval time.Duration, qos byte) {
 	svcType := "agent"
 	pack := senml.Pack{Records: []senml.Record{
@@ -800,7 +811,7 @@ func (a *agent) Ping() error {
 	if err != nil {
 		return err
 	}
-	return a.Publish(control, string(b))
+	return a.publishCmd(control, string(b))
 }
 
 func (a *agent) OTA(ctx context.Context, url, sha256hex string, size uint64) error {
